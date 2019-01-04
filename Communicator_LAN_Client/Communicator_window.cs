@@ -5,6 +5,7 @@ using System.Data;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -20,6 +21,9 @@ namespace Communicator_LAN_Client
         private Size delta;
         private Size speakButton_delta;
 
+        private bool connectingAlready = true;
+        private bool serverRequestListener_isRunning = false;
+
         TcpListener listener = null;
         TcpClient client = null;
         NetworkStream stream = null;
@@ -32,6 +36,7 @@ namespace Communicator_LAN_Client
             this.Text = serverName;
             CurrentServer_label.Text = "Jesteś na serwerze " + serverName;
             parent = _parent as Connecting_window;
+
 
             listener = parent.listener;
             client = parent.client;
@@ -46,6 +51,58 @@ namespace Communicator_LAN_Client
         private void Communicator_window_FormClosing(object sender, FormClosingEventArgs e)
         {
             parent.Close();
+            /*  TODO:
+             * Informować serwer o wyjściu.
+             */
+        }
+
+        private void ServerRequestListener(int port)
+        {
+            serverRequestListener_isRunning = true;
+            Thread serverListener = new Thread(()=>
+            {
+                TcpListener listener = null;
+                TcpClient client = null;
+                NetworkStream stream = null;
+                BinaryReader reader = null;
+
+                while (true)
+                {
+                    listener = new TcpListener(port);
+                    try
+                    {
+                        listener.Start();
+                        client = listener.AcceptTcpClient();
+                        Random r = new Random();
+                        Thread.Sleep(r.Next(1, 3000));
+                        stream = client.GetStream();
+                        reader = new BinaryReader(stream);
+                        string received = reader.ReadString();
+                        string header = received.Substring(0, received.IndexOf(':') + 1);
+                        if (header == COMMUNICATION_VALUES.CONNECTION_SERVER)
+                        {
+                            string reason = received.Substring(received.IndexOf(':') + 1, (received.IndexOf('|')) - received.IndexOf(':'));
+                            switch (reason)
+                            {
+                                case COMMUNICATION_VALUES.RECEIVING.REFRESH_YOUR_LIST:
+                                {
+                                    if(!connectingAlready)
+                                        RefreshClientsList();
+                                    break;
+                                }
+                            }
+                        }
+                        listener.Stop();
+                    } catch (SocketException socketex)
+                    {
+                        Console.WriteLine("");
+                        Console.Write(socketex.Message);
+                        Console.Write(socketex.StackTrace);
+                    }
+                }
+            });
+            serverListener.IsBackground = true;
+            serverListener.Start();
         }
 
         private void Communicator_window_Resize(object sender, EventArgs e)
@@ -86,9 +143,14 @@ namespace Communicator_LAN_Client
 
         private void RefreshClientsList()
         {
+            if (InvokeRequired)
+            {
+                Invoke(new MethodInvoker(()=> {
+                    clearList();
+                }));
+            }
             Thread getClientsListThread = new Thread(() =>
             {
-
                 StreamReader reader;
                 string toSend, received;
                 bool isEnd = false;
@@ -96,13 +158,13 @@ namespace Communicator_LAN_Client
                 while (!isEnd)
                 {
                     client = new TcpClient();
-                    client.ConnectAsync(parent.IP_textBox.Text, 65505).Wait(500);
+                    client.ConnectAsync(parent.IP_textBox.Text, 45000).Wait(500);
                     stream = client.GetStream();
                     toSend = COMMUNICATION_VALUES.CONNECTION_CLIENT +
                         COMMUNICATION_VALUES.SENDING.SEND_ME_CLIENT + iterator.ToString();
                     writer = new BinaryWriter(stream);
                     writer.Write(toSend);
-                    
+
                     reader = new StreamReader(stream);
                     received = reader.ReadToEnd();
                     if (received == null)
@@ -134,7 +196,12 @@ namespace Communicator_LAN_Client
                     }
                     iterator++;
                 }
-
+                Invoke(new MethodInvoker(() =>
+                {
+                    connectingAlready = false;
+                    if(!serverRequestListener_isRunning)
+                        ServerRequestListener(parent.port);
+                }));
             });
             getClientsListThread.IsBackground = true;
             getClientsListThread.Start();
@@ -155,7 +222,7 @@ namespace Communicator_LAN_Client
 
                         Thread sendToServerThread = new Thread(() =>
                         {
-                            client = new TcpClient(parent.IP_textBox.Text, 65505);
+                            client = new TcpClient(parent.IP_textBox.Text, 45000);
                             stream = client.GetStream();
                             writer = new BinaryWriter(stream);
                             writer.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT +
@@ -183,7 +250,7 @@ namespace Communicator_LAN_Client
 
                         Thread sendToServerThread = new Thread(() =>
                         {
-                            client = new TcpClient(parent.IP_textBox.Text, 65505);
+                            client = new TcpClient(parent.IP_textBox.Text, 45000);
                             stream = client.GetStream();
                             writer = new BinaryWriter(stream);
                             writer.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT +
@@ -194,6 +261,23 @@ namespace Communicator_LAN_Client
                     }
                 }
             }
+        }
+
+        private byte[] stringToByte(string IP)
+        {
+            IPAddress address = IPAddress.Parse(IP);
+            byte[] bytes = address.GetAddressBytes();
+            return bytes;
+        }
+
+        private void clearList()
+        {
+            UsersPanel.Controls.Clear();
+            /*if (UsersPanel.Controls.Count != 0)
+                foreach (Control c in UsersPanel.Controls)
+                {
+                    UsersPanel.Controls.Remove(c);
+                }*/
         }
     }
 }

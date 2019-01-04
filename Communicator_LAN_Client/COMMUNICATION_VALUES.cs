@@ -31,6 +31,8 @@ namespace Communicator_LAN_Client
 
             public const string NEXT_CLIENT_FROM_LIST = "NEXT|";
             public const string END_OF_LIST = "EOF|";
+
+            public const string REFRESH_YOUR_LIST = "REFURLIST|";
         }
     }
 }
