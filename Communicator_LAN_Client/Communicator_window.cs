@@ -11,6 +11,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using NetMQ;
+using NAudio;
+using NAudio.Wave;
 
 namespace Communicator_LAN_Client
 {
@@ -36,7 +39,6 @@ namespace Communicator_LAN_Client
             this.Text = serverName;
             CurrentServer_label.Text = "Jesteś na serwerze " + serverName;
             parent = _parent as Connecting_window;
-
 
             listener = parent.listener;
             client = parent.client;
@@ -209,6 +211,11 @@ namespace Communicator_LAN_Client
 
         private static Color defaultBackgroundColor;
 
+
+        MemoryStream wavestrem = new MemoryStream();
+        byte[] recordedBytes = new byte[] {0x0};
+        bool breakThread = true;
+
         private void Speak_button_MouseDown(object sender, MouseEventArgs e)
         {
             foreach (Control c in UsersPanel.Controls)
@@ -219,14 +226,70 @@ namespace Communicator_LAN_Client
                     {
                         defaultBackgroundColor = (c as User).BackColor;
                         (c as User).BackColor = Color.LightBlue;
-
+                        breakThread = false;
+                        
                         Thread sendToServerThread = new Thread(() =>
                         {
                             client = new TcpClient(parent.IP_textBox.Text, 45000);
                             stream = client.GetStream();
                             writer = new BinaryWriter(stream);
                             writer.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT +
-                                COMMUNICATION_VALUES.SENDING.TALKING+(c as User).Username.Text);
+                                COMMUNICATION_VALUES.SENDING.TALKING + (c as User).Username.Text);
+                            Invoke(new MethodInvoker(() =>
+                            {
+                                Console.WriteLine("NADAJĘ: " + Environment.NewLine);
+                            }));
+
+                            bool localStop = breakThread;
+                            bool recording = false;
+                            string output = "";
+                            while (true)
+                            {
+                                WaveInEvent wavesrc = new WaveInEvent();
+                                //wavesrc.DeviceNumber = 2;
+                                wavesrc.WaveFormat = new WaveFormat(44100, 2);
+                                WaveFileWriter wfw = new WaveFileWriter(wavestrem, wavesrc.WaveFormat);
+                                wavesrc.DataAvailable += new EventHandler<WaveInEventArgs>(delegate (Object o, WaveInEventArgs a)
+                                {
+                                    //if (a.BytesRecorded == 256)
+                                    //{
+                                        wfw.Write(a.Buffer, 0, a.BytesRecorded);
+                                        //UdpClient uclient = new UdpClient(46000);
+                                        //uclient.Send(a.Buffer, a.BytesRecorded);
+                                        //uclient.Close();
+
+                                        List<byte> l1 = new List<byte>(recordedBytes);
+                                        List<byte> l2 = new List<byte>(a.Buffer);
+                                        l1.AddRange(l2);
+                                        recordedBytes = l1.ToArray();
+                                    //}
+                                });
+                                if (localStop)
+                                {
+                                    if (recording)
+                                    {
+                                        recording = false;
+                                        wavesrc.StopRecording();
+                                    }
+                                    break;
+                                }
+                                else
+                                {
+                                    Invoke(new MethodInvoker(() =>
+                                    {
+                                        localStop = breakThread;
+                                    }));
+
+                                    recording = true;
+                                    wavesrc.StartRecording();
+                                }
+                            }
+                            IWaveProvider prov = new RawSourceWaveStream(new MemoryStream(recordedBytes), new WaveFormat(44100, 2));
+                            WaveOut wo = new WaveOut();
+                            wo.Init(prov);
+                            wo.Play();
+                            recordedBytes = new byte[] { 0x0 };
+
                         })
                         { IsBackground = true };
                         sendToServerThread.Start();
@@ -235,9 +298,8 @@ namespace Communicator_LAN_Client
                     }
                 }
             }
-            
         }
-
+        
         private void Speak_button_MouseUp(object sender, MouseEventArgs e)
         {
             foreach (Control c in UsersPanel.Controls)
@@ -258,6 +320,7 @@ namespace Communicator_LAN_Client
                         })
                         { IsBackground = true };
                         sendToServerThread.Start();
+                        breakThread = true;
                     }
                 }
             }

@@ -19,6 +19,7 @@ namespace Communicator_LAN_Client
             public const string I_AM_DISCONNECTING = "IMDISCONNECTING|";
 
             public const string SEND_ME_CLIENT = "CLIENTREQUEST|";
+            public const string DATA = "DATA|";
         }
         public static class RECEIVING
         {
