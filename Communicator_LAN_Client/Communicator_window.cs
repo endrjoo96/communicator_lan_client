@@ -19,6 +19,10 @@ namespace Communicator_LAN_Client
 {
     public partial class Communicator_window : Form
     {
+        int RATE = 44100;
+        int BUFFERSIZE = (int)Math.Pow(2, 13);
+        public BufferedWaveProvider bwp;
+
         private Connecting_window parent;
         private string MyName;
         private Size delta;
@@ -159,6 +163,7 @@ namespace Communicator_LAN_Client
                 int iterator = 0;
                 while (!isEnd)
                 {
+                    try { 
                     client = new TcpClient();
                     client.ConnectAsync(parent.IP_textBox.Text, 45000).Wait(500);
                     stream = client.GetStream();
@@ -197,6 +202,7 @@ namespace Communicator_LAN_Client
                         }
                     }
                     iterator++;
+                    } catch { continue; }
                 }
                 Invoke(new MethodInvoker(() =>
                 {
@@ -212,7 +218,8 @@ namespace Communicator_LAN_Client
         private static Color defaultBackgroundColor;
 
 
-        MemoryStream wavestrem = new MemoryStream();
+        MemoryStream ms = new MemoryStream();
+        WaveFileWriter wfw;
         byte[] recordedBytes = new byte[] {0x0};
         bool breakThread = true;
 
@@ -243,45 +250,69 @@ namespace Communicator_LAN_Client
                             bool localStop = breakThread;
                             bool recording = false;
                             string output = "";
+                            WaveInEvent wi = new WaveInEvent();
+                            wi.DeviceNumber = 0;
+                            wi.WaveFormat = new NAudio.Wave.WaveFormat(RATE, 1);
+                            wi.BufferMilliseconds = (int)((double)BUFFERSIZE / (double)RATE * 1000.0);
+                            wi.DataAvailable += new EventHandler<WaveInEventArgs>(AudioDataAvailable);
+                            bwp = new BufferedWaveProvider(wi.WaveFormat);
+                            bwp.BufferLength = BUFFERSIZE * 2;
+                            bwp.DiscardOnBufferOverflow = true;
+                                UdpClient udpc = new UdpClient(46000);
+                            
+                            wfw = new WaveFileWriter(ms, wi.WaveFormat);
+
                             while (true)
                             {
-                                WaveInEvent wavesrc = new WaveInEvent();
-                                //wavesrc.DeviceNumber = 2;
-                                wavesrc.WaveFormat = new WaveFormat(44100, 2);
-                                WaveFileWriter wfw = new WaveFileWriter(wavestrem, wavesrc.WaveFormat);
-                                wavesrc.DataAvailable += new EventHandler<WaveInEventArgs>(delegate (Object o, WaveInEventArgs a)
-                                {
-                                    //if (a.BytesRecorded == 256)
-                                    //{
-                                        wfw.Write(a.Buffer, 0, a.BytesRecorded);
-                                        //UdpClient uclient = new UdpClient(46000);
-                                        //uclient.Send(a.Buffer, a.BytesRecorded);
-                                        //uclient.Close();
 
-                                        List<byte> l1 = new List<byte>(recordedBytes);
-                                        List<byte> l2 = new List<byte>(a.Buffer);
-                                        l1.AddRange(l2);
-                                        recordedBytes = l1.ToArray();
-                                    //}
-                                });
+                                Invoke(new MethodInvoker(() =>
+                                {
+                                    localStop = breakThread;
+                                }));
+
+                                if (wi.BufferMilliseconds >= 185) {
+                                    byte[] bytebuff = ReadFully(ms, BUFFERSIZE * 2);
+
+                                    byte[] message = Encoding.ASCII.GetBytes(COMMUNICATION_VALUES.CONNECTION_CLIENT+COMMUNICATION_VALUES.SENDING.DATA+bytebuff.ToString());
+
+                                    
+                                    try
+                                    {
+                                        udpc.Send(message, message.Length);
+                                    }
+                                    catch { }
+                                }
+                                
                                 if (localStop)
                                 {
                                     if (recording)
                                     {
+                                        udpc.Close();
+                                        wi.StopRecording();
                                         recording = false;
-                                        wavesrc.StopRecording();
                                     }
                                     break;
                                 }
                                 else
                                 {
-                                    Invoke(new MethodInvoker(() =>
+                                    try
                                     {
-                                        localStop = breakThread;
-                                    }));
+                                        if (!recording)
+                                        {
+                                            udpc.Connect(parent.IP_textBox.Text, 46000);
+                                            wi.StartRecording();
+                                            recording = true;
+                                        }
 
-                                    recording = true;
-                                    wavesrc.StartRecording();
+                                    }
+                                    catch
+                                    {
+                                        string msg = "Błąd nagrywania!\n\n";
+                                        msg += "Czy mikrofon jest podłączony?\n";
+                                        msg += "Czy Twój mikrofon jest domyślnym urządzeniem nagrywającym?";
+                                        MessageBox.Show(msg, "Błąd nagrywania", MessageBoxButtons.OK);
+                                        recording = false; 
+                                    }
                                 }
                             }
                             IWaveProvider prov = new RawSourceWaveStream(new MemoryStream(recordedBytes), new WaveFormat(44100, 2));
@@ -312,11 +343,14 @@ namespace Communicator_LAN_Client
 
                         Thread sendToServerThread = new Thread(() =>
                         {
-                            client = new TcpClient(parent.IP_textBox.Text, 45000);
-                            stream = client.GetStream();
-                            writer = new BinaryWriter(stream);
-                            writer.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT +
-                                COMMUNICATION_VALUES.SENDING.NOT_TALKING + (c as User).Username.Text);
+                            try
+                            {
+                                client = new TcpClient(parent.IP_textBox.Text, 45000);
+                                stream = client.GetStream();
+                                writer = new BinaryWriter(stream);
+                                writer.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT +
+                                    COMMUNICATION_VALUES.SENDING.NOT_TALKING + (c as User).Username.Text);
+                            } catch { }
                         })
                         { IsBackground = true };
                         sendToServerThread.Start();
@@ -341,6 +375,26 @@ namespace Communicator_LAN_Client
                 {
                     UsersPanel.Controls.Remove(c);
                 }*/
+        }
+
+        void AudioDataAvailable(object sender, WaveInEventArgs e)
+        {
+            bwp.AddSamples(e.Buffer, 0, e.BytesRecorded);
+            wfw.Write(e.Buffer, 0, e.BytesRecorded);
+        }
+
+        public static byte[] ReadFully(Stream input, int bufferSize)
+        {
+            byte[] buffer = new byte[bufferSize];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                int read;
+                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    ms.Write(buffer, 0, read);
+                }
+                return ms.ToArray();
+            }
         }
     }
 }
