@@ -33,6 +33,25 @@ namespace Communicator_LAN_Client
             CurrentServer_label.Text = "Jesteś na serwerze " + serverName;
             parent = _parent as Connecting_window;
 
+            Thread listening = new Thread(()=>
+            {
+                TcpListener l = null;
+                TcpClient c = null;
+                NetworkStream s = null;
+                BinaryWriter w = null;
+                BinaryReader r = null;
+
+                c = new TcpClient();
+                c.Connect(parent.IP_textBox.Text, 65505);
+                s = c.GetStream();
+                r = new BinaryReader(s);
+                string receivedMessage = r.ReadString();
+                int x = 0;
+
+            });
+            listening.IsBackground = true;
+            listening.Start();
+
             listener = parent.listener;
             client = parent.client;
             stream = parent.stream;
