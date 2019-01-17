@@ -18,6 +18,7 @@ namespace Communicator_LAN_Client
         public TcpListener listener = null;
         public TcpClient client = null;
         public NetworkStream stream = null;
+        public int port = 0;
         BinaryWriter writer = null;
         BinaryReader reader = null;
         Communicator_window window;
@@ -37,7 +38,7 @@ namespace Communicator_LAN_Client
                 try
                 {
                     client = new TcpClient();
-                    if (client.ConnectAsync(IP_textBox.Text, 65505).Wait(2000))
+                    if (client.ConnectAsync(IP_textBox.Text, 45000).Wait(2000))
                     {
                         Invoke(new MethodInvoker(() =>
                         {
@@ -60,9 +61,11 @@ namespace Communicator_LAN_Client
                                 {
                                     case COMMUNICATION_VALUES.RECEIVING.SERVER_NAME:
                                     {
-                                        string name = received.Substring(received.LastIndexOf('|') + 1);
+                                        string name = received.Substring(received.IndexOf('|') + 1, received.LastIndexOf('|') - 1 - received.IndexOf('|'));
+                                        int _port = Convert.ToInt32(received.Substring(received.LastIndexOf('|') + 1));
                                         Invoke(new MethodInvoker(() =>
                                         {
+                                            port = _port;
                                             window = new Communicator_window(name, this, Username_textBox.Text);
                                             window.Show();
                                             Hide();
