@@ -12,6 +12,7 @@ namespace Communicator_LAN_Client
 {
     public partial class User : UserControl
     {
+        public bool isMuted = false, isTalking = false;
         public User()
         {
             InitializeComponent();

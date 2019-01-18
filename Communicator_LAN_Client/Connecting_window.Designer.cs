@@ -50,7 +50,7 @@
             this.Connect_button.Location = new System.Drawing.Point(63, 90);
             this.Connect_button.Name = "Connect_button";
             this.Connect_button.Size = new System.Drawing.Size(75, 23);
-            this.Connect_button.TabIndex = 1;
+            this.Connect_button.TabIndex = 3;
             this.Connect_button.Text = "Połącz...";
             this.Connect_button.UseVisualStyleBackColor = true;
             this.Connect_button.Click += new System.EventHandler(this.Connect_button_Click);
@@ -60,7 +60,7 @@
             this.Username_textBox.Location = new System.Drawing.Point(63, 38);
             this.Username_textBox.Name = "Username_textBox";
             this.Username_textBox.Size = new System.Drawing.Size(123, 20);
-            this.Username_textBox.TabIndex = 2;
+            this.Username_textBox.TabIndex = 1;
             // 
             // label1
             // 
@@ -84,8 +84,9 @@
             // 
             this.Password_textBox.Location = new System.Drawing.Point(63, 64);
             this.Password_textBox.Name = "Password_textBox";
+            this.Password_textBox.PasswordChar = '•';
             this.Password_textBox.Size = new System.Drawing.Size(123, 20);
-            this.Password_textBox.TabIndex = 5;
+            this.Password_textBox.TabIndex = 2;
             // 
             // label3
             // 
@@ -99,7 +100,7 @@
             // Info_label
             // 
             this.Info_label.AutoSize = true;
-            this.Info_label.Location = new System.Drawing.Point(12, 116);
+            this.Info_label.Location = new System.Drawing.Point(4, 117);
             this.Info_label.Name = "Info_label";
             this.Info_label.Size = new System.Drawing.Size(56, 13);
             this.Info_label.TabIndex = 8;
@@ -136,7 +137,7 @@
         private System.Windows.Forms.Label label2;
         private System.Windows.Forms.TextBox Password_textBox;
         private System.Windows.Forms.Label label3;
-        private System.Windows.Forms.Label Info_label;
+        public System.Windows.Forms.Label Info_label;
     }
 }
 

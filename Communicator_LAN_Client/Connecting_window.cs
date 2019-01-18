@@ -32,73 +32,101 @@ namespace Communicator_LAN_Client
         private void Connect_button_Click(object sender, EventArgs e)
         {
             Info_label.ForeColor = Color.Black;
-            Info_label.Text = "Łączenie z serwerem...";
-            Thread x = new Thread(() =>
+            if (Username_textBox.Text == "")
             {
-                try
+                Info_label.ForeColor = Color.DarkRed;
+                Info_label.Text = "Wpisz nazwę użytkownika.";
+            }
+            else
+            {
+                Info_label.Text = "Łączenie z serwerem...";
+                Thread x = new Thread(() =>
                 {
-                    client = new TcpClient();
-                    if (client.ConnectAsync(IP_textBox.Text, 45000).Wait(2000))
+                    try
                     {
-                        Invoke(new MethodInvoker(() =>
+                        client = new TcpClient();
+                        if (client.ConnectAsync(IP_textBox.Text, 45000).Wait(500))
                         {
-                            Info_label.ForeColor = Color.DarkGreen;
-                            Info_label.Text = "Połączono.";
-                        }));
-                        using (stream = client.GetStream())
-                        {
-                            string toSend, received;
-                            toSend = COMMUNICATION_VALUES.CONNECTION_CLIENT + COMMUNICATION_VALUES.SENDING.USERNAME_AND_PASSWORD + Username_textBox.Text + "|" + Password_textBox.Text;
-                            writer = new BinaryWriter(stream);
-                            writer.Write(toSend);
-                            reader = new BinaryReader(stream);
-                            received = reader.ReadString();
-                            string header = received.Substring(0, received.IndexOf(':') + 1);
-                            if (header == COMMUNICATION_VALUES.CONNECTION_SERVER)
+                            Invoke(new MethodInvoker(() =>
                             {
-                                string reason = received.Substring(received.IndexOf(':') + 1, (received.IndexOf('|')) - received.IndexOf(':'));
-                                switch (reason)
+                                Info_label.ForeColor = Color.DarkGreen;
+                                Info_label.Text = "Połączono.";
+                            }));
+                            using (stream = client.GetStream())
+                            {
+                                string toSend, received;
+                                toSend = COMMUNICATION_VALUES.CONNECTION_CLIENT + COMMUNICATION_VALUES.SENDING.USERNAME_AND_PASSWORD + Username_textBox.Text + "|" + Password_textBox.Text;
+                                writer = new BinaryWriter(stream);
+                                writer.Write(toSend);
+                                reader = new BinaryReader(stream);
+                                received = reader.ReadString();
+                                string header = received.Substring(0, received.IndexOf(':') + 1);
+                                if (header == COMMUNICATION_VALUES.CONNECTION_SERVER)
                                 {
-                                    case COMMUNICATION_VALUES.RECEIVING.SERVER_NAME:
+                                    string reason = received.Substring(received.IndexOf(':') + 1, (received.IndexOf('|')) - received.IndexOf(':'));
+                                    switch (reason)
                                     {
-                                        string name = received.Substring(received.IndexOf('|') + 1, received.LastIndexOf('|') - 1 - received.IndexOf('|'));
-                                        int _port = Convert.ToInt32(received.Substring(received.LastIndexOf('|') + 1));
-                                        Invoke(new MethodInvoker(() =>
+                                        case COMMUNICATION_VALUES.RECEIVING.SERVER_NAME:
                                         {
-                                            port = _port;
-                                            window = new Communicator_window(name, this, Username_textBox.Text);
-                                            window.Show();
-                                            Hide();
-                                        }));
-                                        return;
+                                            string name = received.Substring(received.IndexOf('|') + 1, received.LastIndexOf('|') - 1 - received.IndexOf('|'));
+                                            int _port = Convert.ToInt32(received.Substring(received.LastIndexOf('|') + 1));
+                                            Invoke(new MethodInvoker(() =>
+                                            {
+                                                port = _port;
+                                                window = new Communicator_window(name, this, Username_textBox.Text);
+                                                window.Show();
+                                                Hide();
+                                            }));
+                                            return;
+                                        }
+                                        case COMMUNICATION_VALUES.RECEIVING.SERVER_FULL:
+                                        {
+                                            Invoke(new MethodInvoker(() =>
+                                            {
+                                                Info_label.ForeColor = Color.DarkRed;
+                                                Info_label.Text = "Serwer jest pełny.";
+                                            }));
+                                            break;
+                                        }
+                                        case COMMUNICATION_VALUES.RECEIVING.PASSWORD_INCORRECT:
+                                        {
+                                            Invoke(new MethodInvoker(() =>
+                                            {
+                                                Info_label.ForeColor = Color.DarkRed;
+                                                Info_label.Text = "Niepoprawne hasło.";
+                                            }));
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         }
+                        else throw new InvalidOperationException();
                     }
-                    else throw new InvalidOperationException();
-                }
-                catch (InvalidOperationException ex1) {
-                    Invoke(new MethodInvoker(() =>
+                    catch (InvalidOperationException ex1)
                     {
-                        Info_label.ForeColor = Color.Red;
-                        Info_label.Text = "Nie udało się połączyć z serwerem.";
-                    }));
-                }
-                catch (Exception ex2)
+                        Invoke(new MethodInvoker(() =>
+                        {
+                            Info_label.ForeColor = Color.Red;
+                            Info_label.Text = "Nie udało się połączyć z serwerem.";
+                        }));
+                    }
+                    catch (Exception ex2)
+                    {
+                        Invoke(new MethodInvoker(() =>
+                        {
+                            Console.WriteLine(ex2.Message);
+                            Console.Write(ex2.StackTrace);
+                            Info_label.ForeColor = Color.Red;
+                            Info_label.Text = "Błąd połączenia.";
+                        }));
+                    }
+                })
                 {
-                    Invoke(new MethodInvoker(() =>
-                    {
-                        Console.WriteLine(ex2.Message);
-                        Console.Write(ex2.StackTrace);
-                    }));
-                }
-            })
-            {
-                IsBackground = true
-            };
-            x.Start();
-            
+                    IsBackground = true
+                };
+                x.Start();
+            }
         }
     }
 }

@@ -19,8 +19,10 @@ namespace Communicator_LAN_Client
 {
     public partial class Communicator_window : Form
     {
-        int RATE = 44100;
-        int BUFFERSIZE = (int)Math.Pow(2, 13);
+        public User thisUser;
+        bool forcedClose = false;
+        int RATE = 22100;
+        int BUFFERSIZE = (int)Math.Pow(2, 12);
         public BufferedWaveProvider bwp;
 
         private Connecting_window parent;
@@ -31,15 +33,21 @@ namespace Communicator_LAN_Client
         private bool connectingAlready = true;
         private bool serverRequestListener_isRunning = false;
 
+
+        byte[] exitstream;
         TcpListener listener = null;
         TcpClient client = null;
         NetworkStream stream = null;
         BinaryWriter writer = null;
-        BinaryReader reader = null;
 
         public Communicator_window(string serverName, Form _parent, string me)
         {
             InitializeComponent();
+            exitstream = new byte[BUFFERSIZE];
+            for (int i = 0; i < BUFFERSIZE; i++)
+            {
+                exitstream[i] = 127;
+            }
             this.Text = serverName;
             CurrentServer_label.Text = "Jesteś na serwerze " + serverName;
             parent = _parent as Connecting_window;
@@ -51,17 +59,128 @@ namespace Communicator_LAN_Client
                 NetworkStream s = null;
                 BinaryWriter w = null;
                 BinaryReader r = null;
+                l = new TcpListener(parent.port);
+                        l.Start();
 
-                c = new TcpClient();
-                c.Connect(parent.IP_textBox.Text, 65505);
-                s = c.GetStream();
-                r = new BinaryReader(s);
-                string receivedMessage = r.ReadString();
-                int x = 0;
-
+                while (true)
+                {
+                    try
+                    {
+                        c = l.AcceptTcpClient();
+                        s = c.GetStream();
+                        r = new BinaryReader(s);
+                        string received = r.ReadString();
+                        string header = received.Substring(0, received.IndexOf(':') + 1);
+                        if (header == COMMUNICATION_VALUES.CONNECTION_SERVER)
+                        {
+                            string reason = received.Substring(received.IndexOf(':') + 1, (received.IndexOf('|')) - received.IndexOf(':'));
+                            switch (reason)
+                            {
+                                case COMMUNICATION_VALUES.RECEIVING.YOU_HAVE_BEEN_KICKED:
+                                {
+                                    MessageBox.Show("Zostałeś wyrzucony z sesji.", "Wyrzucono z serwera", MessageBoxButtons.OK);
+                                    forcedClose = true;
+                                    c.Close();
+                                    c.Dispose();
+                                    Invoke(new MethodInvoker(() => {
+                                        parent.Info_label.Text = "Zostałeś wyrzucony z " + this.Text;
+                                        Close();
+                                    }));
+                                    break;
+                                }
+                                case COMMUNICATION_VALUES.RECEIVING.SERVER_SHUT_DOWN:
+                                {
+                                    MessageBox.Show("Serwer z aktualnie otwartą sesją został zamknięty.", "Zamknięto serwer lub utracono połączenie", MessageBoxButtons.OK);
+                                    forcedClose = true;
+                                    c.Close();
+                                    c.Dispose();
+                                    Invoke(new MethodInvoker(() => {
+                                        parent.Info_label.Text = "Serwer " + this.Text + " został zamknięty.";
+                                        Close();
+                                    }));
+                                    break;
+                                }
+                                case COMMUNICATION_VALUES.RECEIVING.YOU_HAVE_BEEN_MUTED:
+                                {
+                                    Invoke(new MethodInvoker(() =>
+                                    {
+                                        thisUser.isMuted = true;
+                                        defaultBackgroundColor = thisUser.BackColor;
+                                        thisUser.BackColor = Color.LightSalmon;
+                                        thisUser.Mute_button.Enabled = false;
+                                        Speak_button.Enabled = false;
+                                    }));
+                                    break;
+                                }
+                                case COMMUNICATION_VALUES.RECEIVING.YOU_HAVE_BEEN_UNMUTED:
+                                {
+                                    Invoke(new MethodInvoker(() =>
+                                    {
+                                        thisUser.isMuted = false;
+                                        thisUser.BackColor = defaultBackgroundColor;
+                                        thisUser.Mute_button.Enabled = true;
+                                        Speak_button.Enabled = true;
+                                    }));
+                                    break;
+                                }
+                                case COMMUNICATION_VALUES.RECEIVING.REFRESH_YOUR_LIST:
+                                {
+                                    RefreshClientsList();
+                                    break;
+                                }
+                            }
+                        }
+                        else if (header==COMMUNICATION_VALUES.CONNECTION_CLIENT)
+                        {
+                            l.Stop();
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
             });
             listening.IsBackground = true;
             listening.Start();
+
+            Thread udpListening = new Thread(() => {
+                IPEndPoint ipep = new IPEndPoint(IPAddress.Any, 46000);
+                UdpClient udpc = new UdpClient(ipep);
+                bool stopSignal = false;
+                while (true)
+                {
+                    byte[] receivedbuffer = new byte[BUFFERSIZE];
+                    receivedbuffer = udpc.Receive(ref ipep);
+                    for (int i = 0; i < BUFFERSIZE; i++)
+                    {
+                        if (receivedbuffer[i] != exitstream[i])
+                        {
+                            stopSignal = false;
+                            break;
+                        }
+                        else stopSignal = true;
+
+                    }
+                    if (stopSignal)
+                    {
+                        udpc.Close();
+                        udpc.Dispose();
+                        break;
+                    }
+                    WaveOutEvent player = new WaveOutEvent();
+                    player.Init(new RawSourceWaveStream(receivedbuffer, 0, receivedbuffer.Length, new WaveFormat(RATE, 1)));
+                    bool isMuted = false, isTalking=false;
+                    Invoke(new MethodInvoker(() => {
+                        isMuted = thisUser.isMuted;
+                        isTalking = thisUser.isTalking;
+                    }));
+                    if(!(thisUser.isMuted || thisUser.isTalking))
+                        player.Play();
+                }
+            }) { IsBackground = true };
+            udpListening.Start();
 
             listener = parent.listener;
             client = parent.client;
@@ -75,10 +194,33 @@ namespace Communicator_LAN_Client
 
         private void Communicator_window_FormClosing(object sender, FormClosingEventArgs e)
         {
-            parent.Close();
-            /*  TODO:
-             * Informować serwer o wyjściu.
-             */
+            parent.Info_label.ForeColor = Color.Black;
+            parent.Show();
+            if (!forcedClose)
+            {
+                parent.Info_label.Text = "Rozłączono z serwerem " + this.Text;
+                TcpClient client2 = new TcpClient();
+                client2.ConnectAsync(parent.IP_textBox.Text, 45000).Wait(100);
+                if (client2.Connected)
+                {
+                    NetworkStream ns = client2.GetStream();
+                    string message = COMMUNICATION_VALUES.CONNECTION_CLIENT + COMMUNICATION_VALUES.SENDING.I_AM_DISCONNECTING + MyName;
+                    BinaryWriter bw = new BinaryWriter(ns);
+                    bw.Write(message);
+                }
+            }
+            TcpClient c = new TcpClient();
+            c.ConnectAsync("127.0.0.1", parent.port).Wait(100);
+            if (c.Connected)
+            {
+                NetworkStream ns = c.GetStream();
+                BinaryWriter bw = new BinaryWriter(ns);
+                bw.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT);
+            }
+            UdpClient u = new UdpClient();
+            u.Connect("127.0.0.1", 46000);
+            u.Send(exitstream, exitstream.Length);
+
         }
 
         private void ServerRequestListener(int port)
@@ -156,6 +298,25 @@ namespace Communicator_LAN_Client
                 u.Width = UsersPanel.Width - 5;
             u.Location = new Point(u.Location.X, 27 * UsersPanel.Controls.Count);
             u.Username.Text = name;
+            if (name != MyName) u.Mute_button.Visible = false;
+
+            u.Mute_button.Click += new EventHandler(delegate (object o, EventArgs e)
+            {
+                if (u.BackColor != Color.LightSalmon)
+                {
+                    u.isMuted= true;
+                    defaultBackgroundColor = u.BackColor;
+                    u.BackColor = Color.LightSalmon;
+                    Speak_button.Enabled = false;
+                }
+                else
+                {
+                    u.isMuted = false;
+                    u.BackColor = defaultBackgroundColor;
+                    Speak_button.Enabled = true;
+                }
+            });
+
             return u;
         }
 
@@ -206,7 +367,9 @@ namespace Communicator_LAN_Client
                                 string username = received.Substring(received.IndexOf('|') + 1, received.LastIndexOf('|') - 1 - received.IndexOf('|'));
                                 string ip = received.Substring(received.LastIndexOf('|') + 1);
                                 User u = createClient(username, ip);
-                                if (username == MyName) { u.Username.Font = new Font(u.Username.Font, FontStyle.Bold); }
+                                if (username == MyName) { u.Username.Font = new Font(u.Username.Font, FontStyle.Bold);
+                                        thisUser = u;
+                                    }
                                 Invoke(new MethodInvoker(() =>
                                 {
                                     addClient(u);
@@ -223,12 +386,6 @@ namespace Communicator_LAN_Client
                     iterator++;
                     } catch { continue; }
                 }
-                Invoke(new MethodInvoker(() =>
-                {
-                    connectingAlready = false;
-                    if(!serverRequestListener_isRunning)
-                        ServerRequestListener(parent.port);
-                }));
             });
             getClientsListThread.IsBackground = true;
             getClientsListThread.Start();
@@ -236,9 +393,7 @@ namespace Communicator_LAN_Client
 
         private static Color defaultBackgroundColor;
 
-
-        MemoryStream ms = new MemoryStream();
-        WaveFileWriter wfw;
+        UdpClient _ud;
         byte[] recordedBytes = new byte[] {0x0};
         bool breakThread = true;
 
@@ -250,9 +405,11 @@ namespace Communicator_LAN_Client
                 {
                     if ((c as User).Username.Text == MyName)
                     {
+                        
                         defaultBackgroundColor = (c as User).BackColor;
                         (c as User).BackColor = Color.LightBlue;
                         breakThread = false;
+                        thisUser.isTalking = true;
                         
                         Thread sendToServerThread = new Thread(() =>
                         {
@@ -263,50 +420,31 @@ namespace Communicator_LAN_Client
                                 COMMUNICATION_VALUES.SENDING.TALKING + (c as User).Username.Text);
                             Invoke(new MethodInvoker(() =>
                             {
-                                Console.WriteLine("NADAJĘ: " + Environment.NewLine);
+                                Console.WriteLine("NADAJĘ: ");
                             }));
 
                             bool localStop = breakThread;
                             bool recording = false;
-                            string output = "";
+                            _ud = new UdpClient();
+                            _ud.Connect(parent.IP_textBox.Text, parent.port + 1000);
                             WaveInEvent wi = new WaveInEvent();
                             wi.DeviceNumber = 0;
-                            wi.WaveFormat = new NAudio.Wave.WaveFormat(RATE, 1);
+                            wi.WaveFormat = new WaveFormat(RATE, 1);
                             wi.BufferMilliseconds = (int)((double)BUFFERSIZE / (double)RATE * 1000.0);
                             wi.DataAvailable += new EventHandler<WaveInEventArgs>(AudioDataAvailable);
-                            bwp = new BufferedWaveProvider(wi.WaveFormat);
-                            bwp.BufferLength = BUFFERSIZE * 2;
-                            bwp.DiscardOnBufferOverflow = true;
-                                UdpClient udpc = new UdpClient(46000);
-                            
-                            wfw = new WaveFileWriter(ms, wi.WaveFormat);
-
                             while (true)
                             {
-
                                 Invoke(new MethodInvoker(() =>
                                 {
                                     localStop = breakThread;
                                 }));
 
-                                if (wi.BufferMilliseconds >= 185) {
-                                    byte[] bytebuff = ReadFully(ms, BUFFERSIZE * 2);
-
-                                    byte[] message = Encoding.ASCII.GetBytes(COMMUNICATION_VALUES.CONNECTION_CLIENT+COMMUNICATION_VALUES.SENDING.DATA+bytebuff.ToString());
-
-                                    
-                                    try
-                                    {
-                                        udpc.Send(message, message.Length);
-                                    }
-                                    catch { }
-                                }
-                                
                                 if (localStop)
                                 {
                                     if (recording)
                                     {
-                                        udpc.Close();
+                                        _ud.Close();
+                                        _ud.Dispose();
                                         wi.StopRecording();
                                         recording = false;
                                     }
@@ -318,11 +456,9 @@ namespace Communicator_LAN_Client
                                     {
                                         if (!recording)
                                         {
-                                            udpc.Connect(parent.IP_textBox.Text, 46000);
                                             wi.StartRecording();
                                             recording = true;
                                         }
-
                                     }
                                     catch
                                     {
@@ -330,16 +466,12 @@ namespace Communicator_LAN_Client
                                         msg += "Czy mikrofon jest podłączony?\n";
                                         msg += "Czy Twój mikrofon jest domyślnym urządzeniem nagrywającym?";
                                         MessageBox.Show(msg, "Błąd nagrywania", MessageBoxButtons.OK);
-                                        recording = false; 
+                                        recording = false;
                                     }
+                                
                                 }
+                                Thread.Sleep(50);
                             }
-                            IWaveProvider prov = new RawSourceWaveStream(new MemoryStream(recordedBytes), new WaveFormat(44100, 2));
-                            WaveOut wo = new WaveOut();
-                            wo.Init(prov);
-                            wo.Play();
-                            recordedBytes = new byte[] { 0x0 };
-
                         })
                         { IsBackground = true };
                         sendToServerThread.Start();
@@ -359,7 +491,7 @@ namespace Communicator_LAN_Client
                     if ((c as User).Username.Text == MyName)
                     {
                         (c as User).BackColor = defaultBackgroundColor;
-
+                        thisUser.isTalking = false;
                         Thread sendToServerThread = new Thread(() =>
                         {
                             try
@@ -389,31 +521,15 @@ namespace Communicator_LAN_Client
         private void clearList()
         {
             UsersPanel.Controls.Clear();
-            /*if (UsersPanel.Controls.Count != 0)
-                foreach (Control c in UsersPanel.Controls)
-                {
-                    UsersPanel.Controls.Remove(c);
-                }*/
         }
 
-        void AudioDataAvailable(object sender, WaveInEventArgs e)
+        private void AudioDataAvailable(object sender, WaveInEventArgs e)
         {
-            bwp.AddSamples(e.Buffer, 0, e.BytesRecorded);
-            wfw.Write(e.Buffer, 0, e.BytesRecorded);
-        }
-
-        public static byte[] ReadFully(Stream input, int bufferSize)
-        {
-            byte[] buffer = new byte[bufferSize];
-            using (MemoryStream ms = new MemoryStream())
+            try
             {
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    ms.Write(buffer, 0, read);
-                }
-                return ms.ToArray();
+                _ud.Send(e.Buffer, e.BytesRecorded);
             }
+            catch { }
         }
     }
 }

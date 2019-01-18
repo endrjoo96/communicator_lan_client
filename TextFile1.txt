@@ -1,1 +1,17 @@
-dodaæ w¹tek nas³uchuj¹cy zmian w liœcie u¿ytkowników po stronie serwera.
+1. init -> w¹tek listening wyrzuca wyj¹tek socketu
+2. wysy³anie bajtów wav przez udp -> wywala wyj¹tek: port mo¿na otworzyæ tylko 1 raz	| DONE
+3. wysy³anie danych wav, konwersja do byte array -> nie mo¿na odczytaæ danych spoza konca strumienia	| DONE
+4. klient nadaje na swoim porcie, +1000		| DONE
+5. Powiadomienie klienta o wyrzuceniu, zamkniêcie klienta
+6. Obs³uga wyciszania innych
+7. Powiadomienie o zamkniêciu serwera, zamkniecie klienta
+
+if(!(thisUser.isMuted || thisUser.isTalking))
+odtworzyc, gdy uzytkownik nie mowi, i nie jest zmutowany
+
+muted	talking		result
+---------------------------
+nie		nie			true
+nie		tak			false
+tak		nie			false
+tak		tak			false

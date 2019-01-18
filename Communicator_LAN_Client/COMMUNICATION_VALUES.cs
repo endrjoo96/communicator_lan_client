@@ -28,6 +28,7 @@ namespace Communicator_LAN_Client
             public const string SERVER_FULL = "SERVERISFULL|";
             public const string YOU_HAVE_BEEN_KICKED = "UVEBEENKICKED|";
             public const string YOU_HAVE_BEEN_MUTED = "UVEBEENMUTED|";
+            public const string YOU_HAVE_BEEN_UNMUTED = "UVEBEENUNMUTED|";
             public const string SERVER_SHUT_DOWN = "SERVERSHUTDOWN|";
 
             public const string NEXT_CLIENT_FROM_LIST = "NEXT|";
