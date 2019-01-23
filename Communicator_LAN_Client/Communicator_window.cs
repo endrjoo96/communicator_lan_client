@@ -146,13 +146,14 @@ namespace Communicator_LAN_Client
             listening.Start();
 
             Thread udpListening = new Thread(() => {
-                IPEndPoint ipep = new IPEndPoint(IPAddress.Any, 46000);
-                UdpClient udpc = new UdpClient(ipep);
+                IPEndPoint ipep = new IPEndPoint(new IPAddress(stringToByte("192.168.8.0")), 46000);
+                UdpClient udpc = new UdpClient(parent.port);
                 bool stopSignal = false;
                 while (true)
                 {
-                    byte[] receivedbuffer = new byte[BUFFERSIZE];
+                    byte[] receivedbuffer = new byte[BUFFERSIZE*2];
                     receivedbuffer = udpc.Receive(ref ipep);
+                    Console.WriteLine("** SERWER DO MNIE PRZEMAWIA!!!");
                     for (int i = 0; i < BUFFERSIZE; i++)
                     {
                         if (receivedbuffer[i] != exitstream[i])
@@ -167,17 +168,19 @@ namespace Communicator_LAN_Client
                     {
                         udpc.Close();
                         udpc.Dispose();
+                        Console.WriteLine("** KONCZE PRACE NARA");
                         break;
                     }
                     WaveOutEvent player = new WaveOutEvent();
                     player.Init(new RawSourceWaveStream(receivedbuffer, 0, receivedbuffer.Length, new WaveFormat(RATE, 1)));
-                    bool isMuted = false, isTalking=false;
+                    /*bool isMuted = false, isTalking=false;
                     Invoke(new MethodInvoker(() => {
                         isMuted = thisUser.isMuted;
                         isTalking = thisUser.isTalking;
                     }));
-                    if(!(thisUser.isMuted || thisUser.isTalking))
+                    if(!(thisUser.isMuted || thisUser.isTalking))*/
                         player.Play();
+                    Console.WriteLine("** ODTWARZANKO");
                 }
             }) { IsBackground = true };
             udpListening.Start();
@@ -217,8 +220,8 @@ namespace Communicator_LAN_Client
                 BinaryWriter bw = new BinaryWriter(ns);
                 bw.Write(COMMUNICATION_VALUES.CONNECTION_CLIENT);
             }
-            UdpClient u = new UdpClient();
-            u.Connect("127.0.0.1", 46000);
+            UdpClient u = new UdpClient(46000);
+            u.Connect("127.0.0.1", parent.port);
             u.Send(exitstream, exitstream.Length);
 
         }
@@ -429,7 +432,7 @@ namespace Communicator_LAN_Client
                             _ud.Connect(parent.IP_textBox.Text, parent.port + 1000);
                             WaveInEvent wi = new WaveInEvent();
                             wi.DeviceNumber = 0;
-                            wi.WaveFormat = new WaveFormat(RATE, 1);
+                            wi.WaveFormat = new WaveFormat(RATE, 2);
                             wi.BufferMilliseconds = (int)((double)BUFFERSIZE / (double)RATE * 1000.0);
                             wi.DataAvailable += new EventHandler<WaveInEventArgs>(AudioDataAvailable);
                             while (true)
